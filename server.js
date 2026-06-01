@@ -1,15 +1,41 @@
 const express = require('express')
 const admin = require('firebase-admin')
-const serviceAccount = require('./constants/serviceAccountKey.json')
 const docs = require('./constants/docs')
 const cors = require('cors')
 const path = require('path')
+const fs = require('fs')
 const { Scheduling, addSubjects } = require('./Algorithm')
 
 let port = process.env.PORT || 8000
 
+const getServiceAccount = () => {
+	if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64) {
+		return JSON.parse(
+			Buffer.from(
+				process.env.FIREBASE_SERVICE_ACCOUNT_KEY_BASE64,
+				'base64'
+			).toString('utf8')
+		)
+	}
+
+	if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+		const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
+
+		if (serviceAccount.private_key) {
+			serviceAccount.private_key = serviceAccount.private_key.replace(
+				/\\n/g,
+				'\n'
+			)
+		}
+
+		return serviceAccount
+	}
+
+	return require('./constants/serviceAccountKey.json')
+}
+
 admin.initializeApp({
-	credential: admin.credential.cert(serviceAccount)
+	credential: admin.credential.cert(getServiceAccount())
 })
 const app = express()
 app.use(express.json())
@@ -114,6 +140,18 @@ app.post('/generate', async (req, res) => {
 	res.send(sections)
 })
 app.use('*', (req, res) => {
-	res.sendFile(path.join(__dirname, '/build/index.html'))
+	const indexPath = path.join(__dirname, '/build/index.html')
+
+	if (fs.existsSync(indexPath)) {
+		res.sendFile(indexPath)
+		return
+	}
+
+	res.status(404).json({ message: 'Backend is running.' })
 })
-app.listen(port, () => console.log('Listening on Port 8000'))
+
+if (require.main === module) {
+	app.listen(port, () => console.log(`Listening on Port ${port}`))
+}
+
+module.exports = app
